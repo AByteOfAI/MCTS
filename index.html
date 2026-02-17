@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCTS-DRL | Robotic Follow-Ahead Navigation</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600;8..60,700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0a0c10;
+    --bg-secondary: #111318;
+    --bg-card: #161920;
+    --bg-card-hover: #1c1f28;
+    --border: #252830;
+    --border-accent: #2d3140;
+    --text-primary: #e8eaed;
+    --text-secondary: #9298a8;
+    --text-muted: #5c6270;
+    --accent: #4fc3f7;
+    --accent-dim: #2a6f8e;
+    --accent-glow: rgba(79, 195, 247, 0.12);
+    --green: #66bb6a;
+    --red: #ef5350;
+    --amber: #ffa726;
+    --purple: #ab47bc;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── Grain overlay ── */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Navigation ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(10, 12, 16, 0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+  }
+
+  nav .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+  }
+
+  nav .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+
+  nav .logo span { color: var(--text-muted); }
+
+  nav .nav-links {
+    display: flex;
+    gap: 2rem;
+    list-style: none;
+  }
+
+  nav .nav-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    transition: color 0.3s;
+  }
+
+  nav .nav-links a:hover { color: var(--accent); }
+
+  /* ── Hero ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 6rem 2rem 4rem;
+    overflow: hidden;
+  }
+
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(79, 195, 247, 0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 80% 20%, rgba(171, 71, 188, 0.04) 0%, transparent 50%);
+  }
+
+  .hero-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(79, 195, 247, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79, 195, 247, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(ellipse 70% 50% at 50% 40%, black, transparent);
+  }
+
+  .hero-content {
+    position: relative;
+    max-width: 900px;
+    text-align: center;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 0.4rem 1.2rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 2.5rem;
+    animation: fadeSlideUp 0.8s ease both;
+  }
+
+  .hero-badge .dot {
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse-dot 2s ease infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .hero h1 {
+    font-family: 'Source Serif 4', serif;
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.8rem;
+    animation: fadeSlideUp 0.8s ease 0.15s both;
+  }
+
+  .hero h1 .highlight {
+    background: linear-gradient(135deg, var(--accent), #81d4fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero .subtitle {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    max-width: 650px;
+    margin: 0 auto 3rem;
+    line-height: 1.8;
+    animation: fadeSlideUp 0.8s ease 0.3s both;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    animation: fadeSlideUp 0.8s ease 0.45s both;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.85rem 1.8rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg-primary);
+  }
+
+  .btn-primary:hover {
+    background: #81d4fa;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(79, 195, 247, 0.25);
+  }
+
+  .btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-accent);
+    transform: translateY(-2px);
+  }
+
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Sections ── */
+  section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 6rem 2rem;
+  }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 1.2rem;
+  }
+
+  .section-desc {
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    max-width: 700px;
+    margin-bottom: 3rem;
+    line-height: 1.8;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    max-width: 1200px;
+    margin: 0 auto;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Problem Cards ── */
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.2rem;
+  }
+
+  .problem-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    transition: all 0.35s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .problem-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    transition: opacity 0.35s;
+  }
+
+  .problem-card:hover {
+    border-color: var(--border-accent);
+    background: var(--bg-card-hover);
+    transform: translateY(-3px);
+  }
+
+  .problem-card:hover::before { opacity: 1; }
+
+  .problem-card .icon {
+    font-size: 1.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .problem-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+  }
+
+  .problem-card p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* ── MCTS Stages ── */
+  .stages {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    position: relative;
+    margin-bottom: 3rem;
+  }
+
+  .stage {
+    padding: 2rem 1.5rem;
+    text-align: center;
+    border: 1px solid var(--border);
+    position: relative;
+    background: var(--bg-card);
+    transition: all 0.35s;
+  }
+
+  .stage:first-child { border-radius: 12px 0 0 12px; }
+  .stage:last-child { border-radius: 0 12px 12px 0; }
+  .stage + .stage { border-left: none; }
+
+  .stage:hover {
+    background: var(--bg-card-hover);
+    z-index: 2;
+  }
+
+  .stage-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.8rem;
+  }
+
+  .stage h3 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 0.7rem;
+  }
+
+  .stage p {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .stage .arrow {
+    position: absolute;
+    right: -14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent);
+    font-size: 1.2rem;
+    z-index: 3;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── UCB Formula ── */
+  .formula-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2.5rem;
+    text-align: center;
+  }
+
+  .formula-box .formula {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.8rem;
+    color: var(--text-primary);
+    margin-bottom: 2rem;
+    letter-spacing: 0.02em;
+  }
+
+  .formula-box .formula .fn {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .formula-legend {
+    display: flex;
+    justify-content: center;
+    gap: 2.5rem;
+    flex-wrap: wrap;
+  }
+
+  .formula-legend .item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+
+  .formula-legend .item .sym {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    background: rgba(79, 195, 247, 0.08);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  /* ── Framework Diagram ── */
+  .framework-diagram {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.6;
+  }
+
+  .framework-diagram .hl { color: var(--accent); }
+  .framework-diagram .gr { color: var(--green); }
+  .framework-diagram .rd { color: var(--red); }
+  .framework-diagram .am { color: var(--amber); }
+
+  /* ── Algorithm ── */
+  .algo-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .algo-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1rem 1.5rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .algo-header .dot-row { display: flex; gap: 6px; }
+  .algo-header .d { width: 10px; height: 10px; border-radius: 50%; }
+  .algo-header .d1 { background: var(--red); }
+  .algo-header .d2 { background: var(--amber); }
+  .algo-header .d3 { background: var(--green); }
+
+  .algo-header .title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: 0.5rem;
+  }
+
+  .algo-body {
+    padding: 1.5rem 2rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 2;
+    overflow-x: auto;
+  }
+
+  .algo-body .kw { color: var(--purple); font-weight: 600; }
+  .algo-body .fn { color: var(--accent); }
+  .algo-body .cm { color: var(--text-muted); font-style: italic; }
+  .algo-body .val { color: var(--green); }
+  .algo-body .neg { color: var(--red); }
+
+  /* ── Results Tables ── */
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .result-table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .result-table-wrap .table-title {
+    padding: 1.2rem 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: left;
+    padding: 0.9rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(79, 195, 247, 0.02);
+  }
+
+  td {
+    font-size: 0.85rem;
+    padding: 0.85rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tr:hover td { background: rgba(79, 195, 247, 0.03); }
+
+  .val-best {
+    color: var(--accent);
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .val-mid {
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .val-poor {
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .tag-excellent { background: rgba(102, 187, 106, 0.12); color: var(--green); }
+  .tag-high { background: rgba(79, 195, 247, 0.12); color: var(--accent); }
+  .tag-moderate { background: rgba(255, 167, 38, 0.12); color: var(--amber); }
+  .tag-limited { background: rgba(239, 83, 80, 0.1); color: var(--red); }
+  .tag-poor { background: rgba(239, 83, 80, 0.1); color: var(--red); }
+  .tag-inconsistent { background: rgba(255, 167, 38, 0.12); color: var(--amber); }
+
+  /* ── Applications ── */
+  .app-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.2rem;
+  }
+
+  .app-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.8rem;
+    transition: all 0.35s;
+  }
+
+  .app-item:hover {
+    border-color: var(--border-accent);
+    transform: translateY(-2px);
+  }
+
+  .app-item .emoji { font-size: 1.5rem; margin-bottom: 0.8rem; }
+
+  .app-item h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+
+  .app-item p {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* ── Team ── */
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.2rem;
+  }
+
+  .team-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.35s;
+  }
+
+  .team-card:hover {
+    border-color: var(--border-accent);
+    transform: translateY(-2px);
+  }
+
+  .team-avatar {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.2rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--bg-primary);
+  }
+
+  .team-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+
+  .team-card .email {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--accent);
+    text-decoration: none;
+    transition: color 0.3s;
+  }
+
+  .team-card .email:hover { color: #81d4fa; }
+
+  /* ── References ── */
+  .ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .ref-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.4rem 1.8rem;
+    display: flex;
+    gap: 1.2rem;
+    align-items: flex-start;
+    transition: all 0.3s;
+  }
+
+  .ref-item:hover { border-color: var(--border-accent); }
+
+  .ref-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(79, 195, 247, 0.08);
+    min-width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ref-text {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .ref-text em { color: var(--text-primary); font-style: italic; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 3rem 2rem;
+    text-align: center;
+  }
+
+  footer .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  footer .footer-logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--accent);
+    margin-bottom: 0.6rem;
+  }
+
+  footer .footer-logo span { color: var(--text-muted); }
+
+  footer p {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  footer a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  /* ── Scroll animations ── */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+
+  .fade-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .stages { grid-template-columns: 1fr 1fr; }
+    .stage:first-child { border-radius: 12px 0 0 0; }
+    .stage:nth-child(2) { border-radius: 0 12px 0 0; border-left: none; }
+    .stage:nth-child(3) { border-radius: 0 0 0 12px; border-top: none; }
+    .stage:last-child { border-radius: 0 0 12px 0; border-left: none; border-top: none; }
+    .stage .arrow { display: none; }
+    .results-grid { grid-template-columns: 1fr; }
+    .team-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    nav .nav-links { display: none; }
+    .stages { grid-template-columns: 1fr; }
+    .stage { border-radius: 0 !important; }
+    .stage + .stage { border-left: 1px solid var(--border); border-top: none; }
+    .stage:first-child { border-radius: 12px 12px 0 0 !important; }
+    .stage:last-child { border-radius: 0 0 12px 12px !important; }
+    .formula-legend { flex-direction: column; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav>
+  <div class="nav-inner">
+    <div class="logo">MCTS<span>-DRL</span></div>
+    <ul class="nav-links">
+      <li><a href="#problem">Problem</a></li>
+      <li><a href="#algorithm">Algorithm</a></li>
+      <li><a href="#results">Results</a></li>
+      <li><a href="#applications">Applications</a></li>
+      <li><a href="#team">Team</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      EEE598 · Fall 2024 · Arizona State University
+    </div>
+    <h1>Monte Carlo Tree Search<br>for <span class="highlight">Robotic Navigation</span></h1>
+    <p class="subtitle">
+      Integrating MCTS with Deep Reinforcement Learning to enable robots to lead humans through dynamic environments — avoiding obstacles and occlusions in real time.
+    </p>
+    <div class="hero-actions">
+      <a href="Team14_Lathi_Sinha_Chatterjee_MonteCarlo.pdf" class="btn btn-primary">
+        📄 Read the Paper
+      </a>
+      <a href="https://github.com/AByteOfAI/MCTS" class="btn btn-secondary">
+        ⭐ View on GitHub
+      </a>
+    </div>
+  </div>
+</header>
+
+<div class="divider"></div>
+
+<!-- ── Problem ── -->
+<section id="problem">
+  <div class="fade-in">
+    <div class="section-label">01 — The Challenge</div>
+    <h2 class="section-title">Follow-Ahead Navigation</h2>
+    <p class="section-desc">
+      In robotic follow-ahead scenarios, a robot must navigate in front of a human while handling multiple competing constraints simultaneously.
+    </p>
+  </div>
+  <div class="problem-grid fade-in">
+    <div class="problem-card">
+      <div class="icon">🧠</div>
+      <h3>Predicting Human Intentions</h3>
+      <p>The robot must anticipate the target's future movements and trajectory in real time, despite inherent unpredictability.</p>
+    </div>
+    <div class="problem-card">
+      <div class="icon">🚧</div>
+      <h3>Dynamic Obstacle Avoidance</h3>
+      <p>Physical barriers require the robot to continuously replan its path while maintaining its leading position ahead of the human.</p>
+    </div>
+    <div class="problem-card">
+      <div class="icon">👁</div>
+      <h3>Preventing Occlusion</h3>
+      <p>The robot must maintain an unobstructed line-of-sight to the human target — losing visual contact breaks the interaction.</p>
+    </div>
+    <div class="problem-card">
+      <div class="icon">🛡</div>
+      <h3>Safety Assurance</h3>
+      <p>Collision avoidance is critical. The robot must prioritize human safety while operating in close-proximity shared spaces.</p>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── MCTS Algorithm ── -->
+<section id="algorithm">
+  <div class="fade-in">
+    <div class="section-label">02 — The Algorithm</div>
+    <h2 class="section-title">How MCTS Works</h2>
+    <p class="section-desc">
+      MCTS builds a decision tree incrementally through four iterative stages, balancing exploration of unknown paths with exploitation of known high-reward actions.
+    </p>
+  </div>
+
+  <div class="stages fade-in">
+    <div class="stage">
+      <div class="stage-num">Stage 1</div>
+      <h3>Selection</h3>
+      <p>Traverse the tree from root to a leaf node using the UCB formula to select the most promising branch.</p>
+      <span class="arrow">→</span>
+    </div>
+    <div class="stage">
+      <div class="stage-num">Stage 2</div>
+      <h3>Expansion</h3>
+      <p>Add new child nodes at the leaf to represent unexplored actions and potential future states.</p>
+      <span class="arrow">→</span>
+    </div>
+    <div class="stage">
+      <div class="stage-num">Stage 3</div>
+      <h3>Simulation</h3>
+      <p>Run rollouts from new nodes to estimate future rewards. DRL replaces random rollouts for better accuracy.</p>
+      <span class="arrow">→</span>
+    </div>
+    <div class="stage">
+      <div class="stage-num">Stage 4</div>
+      <h3>Backpropagation</h3>
+      <p>Update node statistics along the selected path, reinforcing high-reward routes for future decisions.</p>
+    </div>
+  </div>
+
+  <div class="formula-box fade-in">
+    <div class="formula">
+      <span class="fn">UCB</span> = <em>w</em> / <em>n<sup>c</sup></em> + <em>c</em> · √( ln <em>n<sup>p</sup></em> / <em>n<sup>c</sup></em> )
+    </div>
+    <div class="formula-legend">
+      <div class="item"><span class="sym">w</span> Expected reward</div>
+      <div class="item"><span class="sym">n<sup>c</sup></span> Child visits</div>
+      <div class="item"><span class="sym">n<sup>p</sup></span> Parent visits</div>
+      <div class="item"><span class="sym">c</span> Exploration constant = 1.4</div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── MCTS-DRL Framework ── -->
+<section>
+  <div class="fade-in">
+    <div class="section-label">03 — The Framework</div>
+    <h2 class="section-title">MCTS-DRL Integration</h2>
+    <p class="section-desc">
+      The hybrid framework replaces random simulations with a trained DRL policy, incorporating collision and occlusion checks at every node expansion.
+    </p>
+  </div>
+
+  <div class="algo-block fade-in">
+    <div class="algo-header">
+      <div class="dot-row">
+        <div class="d d1"></div>
+        <div class="d d2"></div>
+        <div class="d d3"></div>
+      </div>
+      <span class="title">algorithm — mcts-drl approach</span>
+    </div>
+    <div class="algo-body">
+<span class="cm">// Input:  robot pose, human waypoints, occupancy map</span>
+<span class="cm">// Output: navigational goal point</span>
+
+<span class="kw">init</span> parent_node ← robot_state + human_position
+
+<span class="kw">for</span> each expansion_iteration:
+│  <span class="kw">while</span> parent_node not fully expanded:
+│  │  child ← <span class="fn">simulate</span>(action_i)
+│  │
+│  │  <span class="kw">if</span> <span class="val">no collision</span>:
+│  │  │  <span class="kw">if</span> <span class="val">no occlusion</span>:
+│  │  │  │  R ← <span class="fn">Q</span>(observation, action_i)    <span class="cm">// DRL reward estimate</span>
+│  │  │  │  <span class="fn">update</span> child_node state
+│  │  │  <span class="kw">else</span>:
+│  │  │  │  value ← <span class="neg">−1</span>                      <span class="cm">// penalize occlusion</span>
+│  │  │  <span class="fn">update</span> parent_value += child_value
+│  │  <span class="kw">else</span>:
+│  │  │  <span class="neg">delete</span> child_node                   <span class="cm">// prune collision path</span>
+│  │
+│  parent ← leaf with <span class="fn">highest UCB</span>
+
+goal_point ← leaf with <span class="fn">highest UCB</span> (c = <span class="val">0</span>)   <span class="cm">// pure exploitation</span>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── Results ── -->
+<section id="results">
+  <div class="fade-in">
+    <div class="section-label">04 — Results</div>
+    <h2 class="section-title">Performance Comparison</h2>
+    <p class="section-desc">
+      MCTS-DRL consistently outperforms standalone approaches across all tested trajectory types, achieving higher rewards with smoother, safer paths.
+    </p>
+  </div>
+
+  <div class="results-grid fade-in">
+    <div class="result-table-wrap">
+      <div class="table-title">Method Comparison — Qualitative</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>DRL Only</th>
+            <th>MCTS Only</th>
+            <th>MCTS-DRL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Trajectory Accuracy</td>
+            <td><span class="tag tag-moderate">Moderate</span></td>
+            <td><span class="tag tag-inconsistent">Inconsistent</span></td>
+            <td><span class="tag tag-excellent">Excellent</span></td>
+          </tr>
+          <tr>
+            <td>Obstacle Avoidance</td>
+            <td><span class="tag tag-limited">Limited</span></td>
+            <td><span class="tag tag-moderate">Moderate</span></td>
+            <td><span class="tag tag-high">High</span></td>
+          </tr>
+          <tr>
+            <td>Occlusion Handling</td>
+            <td><span class="tag tag-poor">Poor</span></td>
+            <td><span class="tag tag-moderate">Moderate</span></td>
+            <td><span class="tag tag-high">High</span></td>
+          </tr>
+          <tr>
+            <td>Mean Reward</td>
+            <td class="val-poor">−18.4</td>
+            <td class="val-mid">3.2 ± 5.9</td>
+            <td class="val-best">5.4</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="result-table-wrap">
+      <div class="table-title">Cumulative Rewards — 20 Trials</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Trajectory</th>
+            <th>DRL</th>
+            <th>MCTS</th>
+            <th>MCTS-DRL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Circular</td>
+            <td class="val-poor">−17.95</td>
+            <td class="val-mid">2.87 ± 5.96</td>
+            <td class="val-best">4.53</td>
+          </tr>
+          <tr>
+            <td>S-shaped</td>
+            <td class="val-poor">−21.84</td>
+            <td class="val-mid">−3.83 ± 4.33</td>
+            <td class="val-best">−1.61</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <br><br>
+
+  <div class="result-table-wrap fade-in" style="max-width: 600px;">
+    <div class="table-title">SL-MCTS vs. Traditional MCTS</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Traditional</th>
+          <th>SL-MCTS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Success Rate</td>
+          <td class="val-mid">78%</td>
+          <td class="val-best">92%</td>
+        </tr>
+        <tr>
+          <td>Avg. Path Length</td>
+          <td class="val-mid">15 steps</td>
+          <td class="val-best">12 steps</td>
+        </tr>
+        <tr>
+          <td>Computation Time</td>
+          <td class="val-mid">2.4s</td>
+          <td class="val-best">1.3s</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── Applications ── -->
+<section id="applications">
+  <div class="fade-in">
+    <div class="section-label">05 — Applications</div>
+    <h2 class="section-title">Real-World Use Cases</h2>
+    <p class="section-desc">
+      The MCTS-DRL framework extends beyond follow-ahead navigation to a range of robotics and autonomous systems domains.
+    </p>
+  </div>
+  <div class="app-list fade-in">
+    <div class="app-item">
+      <div class="emoji">🤖</div>
+      <h3>Robotic Follow-Ahead</h3>
+      <p>A robot leads a human through dynamic environments, avoiding obstacles and occlusions while maintaining safe distance.</p>
+    </div>
+    <div class="app-item">
+      <div class="emoji">📦</div>
+      <h3>Multi-Agent Pathfinding</h3>
+      <p>Autonomous warehouse robots navigate around shelves and coordinate with each other to optimize throughput.</p>
+    </div>
+    <div class="app-item">
+      <div class="emoji">🦿</div>
+      <h3>Wearable Exoskeletons</h3>
+      <p>Real-time gait assistance that adapts torque and support levels based on patient feedback and intent.</p>
+    </div>
+    <div class="app-item">
+      <div class="emoji">🚗</div>
+      <h3>Autonomous Vehicles</h3>
+      <p>Decision-making in traffic with pedestrian prediction, lane changes, and dynamic route planning.</p>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── Team ── -->
+<section id="team">
+  <div class="fade-in">
+    <div class="section-label">06 — Team</div>
+    <h2 class="section-title">Team 14</h2>
+    <p class="section-desc">
+      School of Electrical, Computer, and Energy Engineering — Arizona State University
+    </p>
+  </div>
+  <div class="team-grid fade-in">
+    <div class="team-card">
+      <div class="team-avatar">SL</div>
+      <h3>Sakshi Lathi</h3>
+      <a href="mailto:slathi@asu.edu" class="email">slathi@asu.edu</a>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">AS</div>
+      <h3>Abhijit Sinha</h3>
+      <a href="mailto:asinh117@asu.edu" class="email">asinh117@asu.edu</a>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">AC</div>
+      <h3>Anusha Chatterjee</h3>
+      <a href="mailto:achatt53@asu.edu" class="email">achatt53@asu.edu</a>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── References ── -->
+<section>
+  <div class="fade-in">
+    <div class="section-label">References</div>
+    <h2 class="section-title">Key Papers</h2>
+  </div>
+  <div class="ref-list fade-in">
+    <div class="ref-item">
+      <div class="ref-num">1</div>
+      <div class="ref-text">Leisiazar, S., Park, E. J., Lim, A., & Chen, M. (2023). <em>An MCTS-DRL Based Obstacle and Occlusion Avoidance Methodology in Robotic Follow-Ahead Applications.</em></div>
+    </div>
+    <div class="ref-item">
+      <div class="ref-num">2</div>
+      <div class="ref-text">Li, W., Liu, Y., Ma, Y., Xu, K., Qiu, J., & Gan, Z. (2023). <em>A Self-Learning Monte Carlo Tree Search Algorithm for Robot Path Planning.</em> Frontiers in Neurorobotics.</div>
+    </div>
+    <div class="ref-item">
+      <div class="ref-num">3</div>
+      <div class="ref-text"><em>Robust walking control of a lower limb rehabilitation exoskeleton coupled with a musculoskeletal model via deep reinforcement learning.</em></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo">MCTS<span>-DRL</span></div>
+    <p>EEE598 Final Project · Fall 2024 · <a href="https://github.com/AByteOfAI/MCTS">AByteOfAI/MCTS</a></p>
+    <p style="margin-top: 0.3rem;">Built with ❤️ at Arizona State University</p>
+  </div>
+</footer>
+
+<!-- ── Scroll Animation Script ── -->
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>
