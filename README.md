@@ -5,13 +5,19 @@
   Team 14: Sakshi Lathi · Abhijit Sinha · Anusha Chatterjee
 </p>
 
+<p align="center">
+  <a href="https://abyteofai.github.io/MCTS/">🌐 <strong>Project Website</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="Team14_Lathi_Sinha_Chatterjee_MonteCarlo.pdf">📄 <strong>Paper (PDF)</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="https://github.com/AByteOfAI/MCTS">⭐ <strong>GitHub Repo</strong></a>
+</p>
+
 ---
 
 ## Overview
 
-This repository contains our research paper and presentation for EEE598 (Fall 2024) at Arizona State University. We investigate **Monte Carlo Tree Search (MCTS)** and its integration with **Deep Reinforcement Learning (DRL)** for solving the **robotic follow-ahead navigation** problem — where a robot must lead a human target while dynamically avoiding obstacles and maintaining line-of-sight.
+This repository contains our research paper, presentation, and project website for EEE598 (Fall 2024) at Arizona State University. We investigate **Monte Carlo Tree Search (MCTS)** and its integration with **Deep Reinforcement Learning (DRL)** for solving the **robotic follow-ahead navigation** problem — where a robot must lead a human target while dynamically avoiding obstacles and maintaining line-of-sight.
 
-> **📄 Full Paper:** [`Team14_Lathi_Sinha_Chatterjee_MonteCarlo.pdf`](Team14_Lathi_Sinha_Chatterjee_MonteCarlo.pdf)
+> **🌐 Explore the interactive project website:** [**abyteofai.github.io/MCTS**](https://abyteofai.github.io/MCTS/)
 
 ---
 
@@ -137,6 +143,7 @@ The MCTS-DRL hybrid consistently outperforms both standalone approaches across s
 
 ```
 MCTS/
+├── index.html                                       # Project website (GitHub Pages)
 ├── README.md                                        # This file
 └── Team14_Lathi_Sinha_Chatterjee_MonteCarlo.pdf     # Full paper + presentation slides
 ```
@@ -164,6 +171,10 @@ MCTS/
 **Course:** EEE598 — Fall 2024, School of Electrical, Computer, and Energy Engineering, Arizona State University
 
 ---
+
+<p align="center">
+  <a href="https://abyteofai.github.io/MCTS/">🌐 Visit the Project Website</a>
+</p>
 
 <p align="center">
   <em>Built with ❤️ at Arizona State University</em>
